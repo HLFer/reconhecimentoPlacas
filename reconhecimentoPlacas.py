@@ -1,167 +1,141 @@
-import cv2
-from matplotlib import pyplot as plt
-import numpy as np
+"""TP2 de PDI."""
+
+# Bibliotecas Utilizadas
+import cv2  # OpenCV
+import numpy as np  # Numpy
+import os
 import sys
 
-nomeDoArquivo = str(sys.argv[1])
-#print "nomeDoArquivo"
-cv2.waitKey(0)
 
-img = cv2.imread(nomeDoArquivo)
-img_cinza = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-
-imgGauss = cv2.GaussianBlur(img_cinza, (3, 3), 0)
-
-sobelx = cv2.Sobel(imgGauss, cv2.CV_8U, 1, 0, ksize = 3)
-
-#Otsu thresholding
-_,th2 = cv2.threshold(sobelx, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-
-#Morphological Closing
-se = cv2.getStructuringElement(cv2.MORPH_RECT,(30,2))
-
-closing = cv2.morphologyEx(th2, cv2.MORPH_CLOSE, se)
-
-_,contours,_ = cv2.findContours(closing, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-
-for cnt in contours:
-    rect = cv2.minAreaRect(cnt)  
-    box = cv2.boxPoints(rect) 
-    box = np.int0(box)  
-    cv2.drawContours(img, [box], 0, (0,255,0),2)
-
-#validate a contour. We validate by estimating a rough area and aspect ratio check.
-def validate(cnt):    
-    rect = cv2.minAreaRect(cnt)  
-    box = cv2.boxPoints(rect) 
-    box = np.int0(box)  
-    output = False
+def validar(cont):
+    """Valida contornos."""
+    rect = cv2.minAreaRect(cont)
+    box = cv2.boxPoints(rect)
+    box = np.int0(box)
     width = rect[1][0]
     height = rect[1][1]
-    if ((width != 0) & (height != 0)):
-        if (((height/width > 3) & (height > width)) | ((width/height > 3) & (width > height))):
-            if((height * width < 20000) & (height * width > 5000)): 
-                output = True
-    return output
+    if ((width != 0) and (height != 0)):
+        razao1 = height / width
+        razao2 = width / height
+        mult = height * width
+        if (((razao1 > 3) and (razao1 < 10) and (height > width)) or ((razao2 > 3) and (razao2 < 10) and (width > height))):
+            if((mult < 20000) and (mult > 3000)):
+                return True
+    return False
 
-#Lets draw validated contours with red.
-for cnt in contours:
-    if validate(cnt):
-        rect = cv2.minAreaRect(cnt)  
-        box = cv2.boxPoints(rect) 
-        box = np.int0(box)  
-        cv2.drawContours(img, [box], 0, (0,0,255),2)
 
-# defining a function doing this will come 
-def generate_seeds(centre, width, height):
-    minsize = int(min(width, height))
-    seed = [None] * 10
-    for i in range(10):
-        random_integer1 = np.random.randint(1000)
-        random_integer2 = np.random.randint(1000)
-        seed[i] = (centre[0] + random_integer1 % int(minsize / 2) - int(minsize / 2), centre[1] + random_integer2 % int(minsize / 2) - int(minsize / 2))
-    return seed
+def encontra_placas(caminho_imagem):
+    """Processa imagem para encontrar placas."""
+    original = cv2.imread(caminho_imagem)
+    cv2.imshow(caminho_imagem, original)
 
-def generate_mask(image, seed_point):
-    h = img.shape[0]
-    w = img.shape[1]
-    #OpenCV wants its mask to be exactly two pixels greater than the source image.
-    mask = np.zeros((h+2, w+2), np.uint8)
-    #We choose a color difference of (50,50,50). Thats a guess from my side.
-    lodiff = 100
-    updiff = 100
-    connectivity = 8
-    newmaskval = 255
-    flags = connectivity + (newmaskval << 8) + cv2.FLOODFILL_FIXED_RANGE + cv2.FLOODFILL_MASK_ONLY
-    _ = cv2.floodFill(image, mask, seed_point, (255, 0, 0), (lodiff, lodiff, lodiff), (updiff, updiff, updiff), flags)
-    return mask
+    # converter para escala de cinza
+    original_cinza = cv2.cvtColor(original, cv2.COLOR_BGR2GRAY)
 
-# we will need a fresh copy of the image so as to draw masks.
-img_mask = cv2.imread(nomeDoArquivo)
+    # suaviza a imagem
+    suavizada = cv2.GaussianBlur(original_cinza, (3, 3), 0)
+    cv2.imwrite(diretorio + "1 - suavizada.jpg", suavizada)
 
-# for viewing the different masks later
-mask_list = []
+    # encontra as bordas da imagem com operador Sobel
+    sobel = cv2.Sobel(suavizada, cv2.CV_8U, 1, 0, ksize=3)
+    cv2.imwrite(diretorio + "2 - sobel.jpg", sobel)
 
-for cnt in contours:
-    if validate(cnt):
-        rect = cv2.minAreaRect(cnt) 
-        centre = (int(rect[0][0]), int(rect[0][1]))
-        width = rect[1][0]
-        height = rect[1][1]
-        seeds = generate_seeds(centre, width, height)
-        
-        #now for each seed, we generate a mask
-        for seed in seeds:
-            # plot a tiny circle at the present seed.
-            cv2.circle(img, seed, 1, (0,0,255), -1)
-            # generate mask corresponding to the current seed.
-            mask = generate_mask(img_mask, seed)
-            mask_list.append(mask)   
+    # # ETAPA 1 : TopHat
+    # kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (8, 8))
+    # tophat = cv2.morphologyEx(suavizada, cv2.MORPH_TOPHAT, kernel)
+    # cv2.imwrite(diretorio + "3 - tophat.jpg", tophat)
 
-validated_masklist = []
-for mask in mask_list:
-    contour = np.argwhere(mask.transpose() == 255)
-    if validate(contour):
-        validated_masklist.append(mask)
+    # ETAPA 2 : Binarizacao
+    binarizada = cv2.threshold(sobel, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    cv2.imwrite(diretorio + "4 - binarizada.jpg", binarizada)
 
-try:
-    assert (len(validated_masklist) != 0)
-except AssertionError:
-    print ("Nenhuma placa encontrada")
+    # ETAPA 3 : Fechamento HOriz
+    kernel = np.ones((1, 60), np.uint8)
+    fechamento = cv2.morphologyEx(binarizada, cv2.MORPH_CLOSE, kernel)
+    cv2.imwrite(diretorio + "5 - fechamento.jpg", fechamento)
 
-def rmsdiff(im1, im2):
-    diff = im1-im2
-    output = False
-    if np.sum(abs(diff)) / float(min(np.sum(im1), np.sum(im2))) < 0.01:
-        output = True
-    return output
+    #  ETAPA 4 : Abertura max e min (Vertical)
+    kernel = np.ones((6, 1), np.uint8)
+    abertura = cv2.morphologyEx(fechamento, cv2.MORPH_OPEN, kernel)
+    cv2.imwrite(diretorio + "7 - abertura.jpg", abertura)
 
-# final masklist will be the final list of masks we will be working on.
-final_masklist = []
-index = []
-for i in range(len(validated_masklist) - 1):
-    for j in range(i + 1, len(validated_masklist)):
-        if rmsdiff(validated_masklist[i], validated_masklist[j]):
-            index.append(j)
-for mask_no in list(set(range(len(validated_masklist)))-set(index)):
-    final_masklist.append(validated_masklist[mask_no])
+    #  ETAPA 4 : Abertura max e min (Horizontal e Vertical)
+    # kernel = np.ones((25, 1), np.uint8)
+    # abertura2 = cv2.morphologyEx(abertura, cv2.MORPH_OPEN, kernel)
+    # cv2.imwrite(diretorio + "8 - abertura2.jpg", abertura2)
 
-cropped_images = []
-for mask in final_masklist:
-    contour = np.argwhere(mask.transpose() == 255)
-    rect = cv2.minAreaRect(contour)
-    width = int(rect[1][0])
-    height = int(rect[1][1])
-    centre = (int(rect[0][0]), int(rect[0][1]))
-    box = cv2.boxPoints(rect) 
-    box = np.int0(box)
-    #check for 90 degrees rotation
-    if ((width / float(height)) > 1):
-        # crop a particular rectangle from the source image
-        cropped_image = cv2.getRectSubPix(img_mask, (width, height), centre)
+    #  ETAPA 5 : Dilatacao e remocao de ruidos
+    # kernel = np.ones((1, 55), np.uint8)
+    # fechamento3 = cv2.morphologyEx(abertura2, cv2.MORPH_CLOSE, kernel)
+    # cv2.imwrite(diretorio + "10 - fechamento3.jpg", fechamento3)
+
+    # ETAPA 6 : Dilatação.
+    kernel = np.ones((5, 5), np.uint8)
+    dilatacao_final = cv2.dilate(abertura, kernel, iterations=1)
+    cv2.imwrite(diretorio + "11 - dilatacao_final.jpg", dilatacao_final)
+
+    # Encontra contorno das áreas segmentadas após abertura.
+    contours = cv2.findContours(dilatacao_final, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[1]
+
+    placas = []
+
+    # Cria uma caixa retangular em torno dos contornos encontrados validando-os e armazenando em uma lista.
+    for cont in contours:
+        # cv2.drawContours(original, [box], 0, (0, 255, 0), 2)
+        if validar(cont):
+            rect = cv2.minAreaRect(cont)
+            box = cv2.boxPoints(rect)
+            box = np.int0(box)
+            width = int(rect[1][0])
+            height = int(rect[1][1])
+            center = (int(rect[0][0]), int(rect[0][1]))
+            placas.append([width, height, center])
+            # cv2.drawContours(original, [box], 0, (0, 0, 255), 2)
+
+    # cv2.imwrite(diretorio + "caixa_original.jpg", original)
+
+    # Lista com imagens das placas.
+    placa_img = []
+
+    if(len(placas) >= 1):
+        print(caminho_imagem + ":\n\t Placas encontradas\n")
+        if (placas[0][0] < placas[0][1]):
+            # Recorta placa da imagem.
+            placa_img = cv2.getRectSubPix(original, (placas[0][1] + 15, placas[0][0] + 5), placas[0][2])
+        else:
+            # Recorta placa da imagem.
+            placa_img = cv2.getRectSubPix(original, (placas[0][0] + 5, placas[0][1] + 15), placas[0][2])
+        cv2.imshow("Placa", placa_img)
+        cv2.imwrite(diretorio + "12 - placa_segmentada.jpg", placa_img)
+
     else:
-        # crop a particular rectangle from the source image
-        cropped_image = cv2.getRectSubPix(img_mask, (height, width), centre)
+        # Se a lista estiver vazia, nenhuma placa foi encontrada.
+        print(caminho_imagem + ":\n\t Nenhuma placa encontrada\n")
 
-    # convert into grayscale
-    cropped_image = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
-    # equalize the histogram
-    cropped_image = cv2.equalizeHist(cropped_image)
-    # resize to 260 cols and 63 rows. (Just something I have set as standard here)
-    cropped_image = cv2.resize(cropped_image, (260, 63))
-    cropped_images.append(cropped_image)
-
-
-#_ = plt.subplots_adjust(hspace = 0.000)
-number_of_subplots = len(cropped_images)
-
-
-#porque gera quantidades diferentes de imagens?
-for i in range (len(cropped_images)): 
-    cv2.imwrite("Resultados\Placa"+str(i)+".jpg", cropped_images[i])
+    # Espera usuário apertar uma tecla para sair.
     cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
-cv2.waitKey(0)
-cv2.destroyAllWindows()
 
+diretorio = "resultado/"
+rootdir = "Treinamento-placas/"
+
+# Limpa pasta de resultados.
+for the_file in os.listdir(diretorio):
+        file_path = os.path.join(diretorio, the_file)
+        try:
+            if os.path.isfile(file_path):
+                os.unlink(file_path)
+        except Exception as e:
+            print(e)
+
+if len(sys.argv) < 2:
+    # Percorre imagens da pasta de treinamento.
+    for subdir, dirs, files in os.walk(rootdir):
+        for file in files:
+            if file[1] != '_':
+                nome_do_arquivo = os.path.join(rootdir, file)
+                encontra_placas(nome_do_arquivo)
+else:
+    # analisa somente uma imagem.
+    encontra_placas(str(sys.argv[1]))
